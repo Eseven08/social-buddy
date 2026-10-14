@@ -1,4 +1,4 @@
 ﻿[onebot] listening on :8765 for events...
 [onebot] outbound via http://127.0.0.1:3000
-[onebot] group mode: 718193431 (reply prob 0.2, whitelist [])
+[onebot] group mode: 718193431 (reply prob 0.5, whitelist [])
 [onebot] poll started (interval 4s)

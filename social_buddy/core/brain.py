@@ -134,22 +134,22 @@ class RetrievalBrain(Brain):
         self._rng = random.Random(seed)
 
     _openers = [
-        "Haha, tell me more about that.",
-        "Oh? That's interesting, how come?",
-        "I see what you mean.",
-        "Right, that reminds me of something we talked about before.",
-        "Mm, go on -- I'm listening.",
-        "Haha okay. What made you think of that?",
+        "哈哈，展开说说呗。",
+        "哦？有意思，怎么说？",
+        "我懂你意思。",
+        "对，这让我想起之前聊过的事。",
+        "嗯，你继续说，我在听。",
+        "哈哈行啊，怎么突然想到这个？",
     ]
     _recall_templates = [
-        "Oh right, you mentioned \"{hit}\" before -- is that still going on?",
-        "That actually reminds me: you said \"{hit}\" earlier. How did that turn out?",
-        "Wait, wasn't it you who said \"{hit}\" a while back?",
+        "对了，你之前说过\"{hit}\"——还在弄吗？",
+        "这倒让我想起来：你之前说\"{hit}\"，后来怎么样了？",
+        "等等，之前不就是你说的\"{hit}\"吗？",
     ]
     _proactive_opener = [
-        "Hey, just thinking of you -- what are you up to?",
-        "Hey! Random thought, but how's your day going?",
-        "Hey, haven't heard from you in a bit. All good?",
+        "嘿，刚想到你——在忙啥呢？",
+        "嘿！突然想起你，今天过得咋样？",
+        "嘿，好一阵没你消息了，都还好吧？",
     ]
 
     def _last_human(self, messages) -> str:
@@ -163,17 +163,17 @@ class RetrievalBrain(Brain):
         for t in reversed(self.memory.open_topics):
             if t.asked:
                 continue
-            return f'Hey, you mentioned "{t.text[:70]}" -- how is it going?'
+            return f'嘿，你提过"{t.text[:70]}"——进展咋样了？'
         # 2) A dated milestone that is near.
         for m in self.memory.milestones:
             if m.get("fired"):
                 continue
-            return f"Thinking of you -- {m['title']} is around now. Hope it goes well!"
+            return f"想到你了——{m['title']}应该快到了吧，希望一切顺利！"
         # 3) If the person sounded down recently, that beats a random opener.
         from .memory import mood_of
         recent = self.memory.recent_turns(6)
         if sum(mood_of(t.text) for t in recent if t.role == "human") < 0:
-            return "Hey, you sounded a bit down earlier -- everything okay?"
+            return "你之前听起来有点低落——还好吗？"
         return self._rng.choice(self._proactive_opener)
 
     def generate(self, messages, temperature=0.8, max_tokens=160):

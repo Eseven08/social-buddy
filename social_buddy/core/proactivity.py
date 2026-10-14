@@ -34,10 +34,10 @@ class ProactiveAction:
 class Pacing:
     """How often the buddy may reach out on its own."""
 
-    min_silence_s: float = 1200.0      # 20 min
-    max_silence_s: float = 14400.0     # 4 h
-    budget_per_day: int = 8            # hard cap of proactive msgs / day
-    max_random_per_day: int = 2        # "thinking of you" is the rarest kind
+    min_silence_s: float = 300.0       # 5 min -- lively enough for a group buddy
+    max_silence_s: float = 7200.0      # 2 h
+    budget_per_day: int = 15           # hard cap of proactive msgs / day
+    max_random_per_day: int = 3        # "thinking of you" stays the rarest kind
 
     def next_delay(self, rng: random.Random) -> float:
         """Log-uniform sample in [min, max] -- feels like a person's rhythm."""
