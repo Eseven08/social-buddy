@@ -71,7 +71,8 @@ class OneBotAdapter(Adapter):
         self._rng = random.Random()
         self._last_group_reply: dict[str, float] = {}  # group -> ts
         self._group_cooldown = 45.0
-        self._last_seqs: dict[str, int | None] = {}  # group -> last seen message_seq
+        self._last_seqs: dict[str, int | None] = {}  # group -> last seen message time
+        self._seen_ids: dict[str, set[int]] = {}  # group -> recently seen message ids
         if not self.target_qq and not self.group_id:
             raise ValueError(
                 "OneBot adapter needs SOCIAL_BUDDY_QQ_TARGET (or SOCIAL_BUDDY_QQ_GROUP)"
@@ -123,7 +124,13 @@ class OneBotAdapter(Adapter):
         server.serve_forever()
 
     def _poll_loop(self) -> None:
-        """Poll get_group_msg_history and feed new messages through on_event."""
+        """Poll get_group_msg_history and feed new messages through on_event.
+
+        The bridge's message_seq values are NOT monotonic (Tencent message ids
+        come back out of order), so we track progress by message timestamp and
+        de-duplicate with recently-seen message ids.
+        """
+        print(f"[onebot] poll started (interval {self.poll_seconds}s)", flush=True)
         time.sleep(2)  # let the bridge settle before the first baseline read
         while True:
             try:
@@ -140,19 +147,27 @@ class OneBotAdapter(Adapter):
                     msgs = (data.get("data") or {}).get("messages") or []
                     if not msgs:
                         continue
-                    top = max(int(m.get("message_seq", 0)) for m in msgs)
+                    top = max(int(m.get("time", 0)) for m in msgs)
                     baseline = self._last_seqs.get(gid)
+                    seen = self._seen_ids.setdefault(gid, set())
                     if baseline is None:
                         # First read: only record the baseline, do not replay history.
                         self._last_seqs[gid] = top
+                        for m in msgs:
+                            seen.add(int(m.get("message_id", 0)))
                         continue
                     self._last_seqs[gid] = top
-                    fresh = [
-                        m for m in msgs
-                        if int(m.get("message_seq", 0)) > baseline
-                        and str(m.get("user_id", "")) != self.bot_qq
-                    ]
-                    for m in sorted(fresh, key=lambda x: int(x.get("message_seq", 0))):
+                    fresh = []
+                    for m in msgs:
+                        mid = int(m.get("message_id", 0))
+                        if str(m.get("user_id", "")) == self.bot_qq:
+                            continue
+                        if int(m.get("time", 0)) > baseline or (
+                            int(m.get("time", 0)) == baseline and mid not in seen
+                        ):
+                            fresh.append(m)
+                            seen.add(mid)
+                    for m in sorted(fresh, key=lambda x: int(x.get("time", 0))):
                         evt = {
                             "post_type": "message",
                             "message_type": "group",
