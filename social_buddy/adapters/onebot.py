@@ -67,9 +67,11 @@ class OneBotAdapter(Adapter):
         self.webhook_port = int(os.getenv("SOCIAL_BUDDY_WEBHOOK_PORT", "8765"))
         self.tick_seconds = int(os.getenv("SOCIAL_BUDDY_TICK_SECONDS", "60"))
         self.group_reply_prob = float(os.getenv("SOCIAL_BUDDY_GROUP_REPLY_PROB", "0.2"))
+        self.poll_seconds = int(os.getenv("SOCIAL_BUDDY_POLL_SECONDS", "4"))
         self._rng = random.Random()
         self._last_group_reply: dict[str, float] = {}  # group -> ts
         self._group_cooldown = 45.0
+        self._last_seqs: dict[str, int | None] = {}  # group -> last seen message_seq
         if not self.target_qq and not self.group_id:
             raise ValueError(
                 "OneBot adapter needs SOCIAL_BUDDY_QQ_TARGET (or SOCIAL_BUDDY_QQ_GROUP)"
@@ -112,8 +114,58 @@ class OneBotAdapter(Adapter):
             print(f"[onebot] group mode: {self.group_id} (reply prob "
                   f"{self.group_reply_prob}, whitelist {sorted(self.whitelist)})", flush=True)
         threading.Thread(target=self._tick_loop, daemon=True).start()
+        # Pull mode: query the bridge API for new group messages directly.
+        # Some bridge builds never deliver HTTP-client events, so polling is
+        # the reliable path; the webhook above still helps when it does work.
+        if self.group_id:
+            threading.Thread(target=self._poll_loop, daemon=True).start()
         server = ThreadingHTTPServer(("0.0.0.0", self.webhook_port), _make_handler(self))
         server.serve_forever()
+
+    def _poll_loop(self) -> None:
+        """Poll get_group_msg_history and feed new messages through on_event."""
+        time.sleep(2)  # let the bridge settle before the first baseline read
+        while True:
+            try:
+                for gid in (self.group_id.split(",") if self.group_id else []):
+                    gid = gid.strip()
+                    if not gid:
+                        continue
+                    resp = requests.post(
+                        f"{self.http}/get_group_msg_history",
+                        json={"group_id": int(gid), "count": 20},
+                        timeout=10,
+                    )
+                    data = resp.json()
+                    msgs = (data.get("data") or {}).get("messages") or []
+                    if not msgs:
+                        continue
+                    top = max(int(m.get("message_seq", 0)) for m in msgs)
+                    baseline = self._last_seqs.get(gid)
+                    if baseline is None:
+                        # First read: only record the baseline, do not replay history.
+                        self._last_seqs[gid] = top
+                        continue
+                    self._last_seqs[gid] = top
+                    fresh = [
+                        m for m in msgs
+                        if int(m.get("message_seq", 0)) > baseline
+                        and str(m.get("user_id", "")) != self.bot_qq
+                    ]
+                    for m in sorted(fresh, key=lambda x: int(x.get("message_seq", 0))):
+                        evt = {
+                            "post_type": "message",
+                            "message_type": "group",
+                            "group_id": gid,
+                            "user_id": m.get("user_id"),
+                            "self_id": self.bot_qq,
+                            "message": m.get("message"),
+                            "raw_message": m.get("raw_message", ""),
+                        }
+                        self.on_event(evt)
+            except Exception as exc:  # noqa: BLE001 -- keep the loop alive
+                print(f"[onebot] poll error: {exc}", flush=True)
+            time.sleep(self.poll_seconds)
 
     def _tick_loop(self) -> None:
         while True:
