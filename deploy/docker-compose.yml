@@ -1,0 +1,17 @@
+services:
+  social-buddy:
+    build: .
+    container_name: social-buddy
+    restart: unless-stopped
+    environment:
+      SOCIAL_BUDDY_ONE_BOT_HTTP: "http://host.docker.internal:3000"
+      SOCIAL_BUDDY_QQ_SELF: "123456789"
+      SOCIAL_BUDDY_QQ_GROUP: "987654321"
+      OPENAI_API_KEY: "sk-..."
+      OPENAI_BASE_URL: "https://api.openai.com/v1"
+      SOCIAL_BUDDY_MODEL: "gpt-4o-mini"
+    volumes:
+      - ./data:/data
+      - ./profile.json:/app/profile.json:ro
+    ports:
+      - "8765:8765"

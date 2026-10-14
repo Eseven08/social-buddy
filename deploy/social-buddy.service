@@ -1,0 +1,29 @@
+# systemd unit: run social-buddy 24/7 on a Linux VPS without Docker.
+#
+# Install:
+#   1. put the project in /opt/social-buddy
+#   2. python3 -m venv /opt/social-buddy/.venv
+#      /opt/social-buddy/.venv/bin/pip install -r /opt/social-buddy/requirements.txt
+#   3. copy config.env (with OPENAI_API_KEY etc.) next to main.py
+#   4. sudo cp deploy/social-buddy.service /etc/systemd/system/
+#      sudo systemctl daemon-reload && sudo systemctl enable --now social-buddy
+#
+# The QQ bridge (NapCatQQ) must also run somewhere reachable at
+# SOCIAL_BUDDY_ONE_BOT_HTTP (here: http://127.0.0.1:3000 on the same host).
+
+[Unit]
+Description=social-buddy: an AI friend that messages you first
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/social-buddy
+ExecStart=/opt/social-buddy/.venv/bin/python main.py onebot --config /opt/social-buddy/config.env
+Restart=always
+RestartSec=5
+# safety: no runaway proactive messages even if a bug slips in
+Environment=SOCIAL_BUDDY_GROUP_BUDGET=3
+
+[Install]
+WantedBy=multi-user.target
