@@ -78,12 +78,17 @@ class OneBotAdapter(Adapter):
     # ------------------------------------------------------------------
     # outbound
     # ------------------------------------------------------------------
-    def send_to(self, text: str, group: bool = False, conv_id: str = "") -> None:
+    def send_to(self, text: str, group: bool = False, conv_id: str = "", at_qq: str = "") -> None:
         if group:
             endpoint, payload = "send_group_msg", {"group_id": int(conv_id or self.group_id)}
         else:
             endpoint, payload = "send_private_msg", {"user_id": int(conv_id or self.target_qq)}
-        payload["message"] = text
+        # NapCat (this build) requires message segments as an array.
+        message: list = []
+        if at_qq:
+            message.append({"type": "at", "data": {"qq": str(at_qq)}})
+        message.append({"type": "text", "data": {"text": text}})
+        payload["message"] = message
         resp = requests.post(f"{self.http}/{endpoint}", json=payload, timeout=10)
         resp.raise_for_status()
         data = resp.json()
@@ -173,9 +178,9 @@ class OneBotAdapter(Adapter):
             reply = cm.handle_incoming(text)
             if not reply:
                 return
-            prefix = f"[CQ:at,qq={user_id}] " if (mentioned or whitelisted) else ""
+            at_qq = user_id if (mentioned or whitelisted) else ""
             print(f"[onebot] group reply (mention={mentioned}): {reply}", flush=True)
-            self.send_to(prefix + reply, group=True, conv_id=group_id)
+            self.send_to(reply, group=True, conv_id=group_id, at_qq=at_qq)
             self._last_group_reply[group_id] = time.time()
             return
 
