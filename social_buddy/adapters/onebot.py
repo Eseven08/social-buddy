@@ -164,7 +164,14 @@ class OneBotAdapter(Adapter):
             text = _plain_text(event.get("message"))
             mentioned = _was_mentioned(event.get("message"), self.bot_qq)
             whitelisted = user_id in self.whitelist
+            if not text and not mentioned and not whitelisted:
+                return
             if not text:
+                # Bare @ with no text -- answer anyway so the bot never feels dead.
+                reply = "在呢，怎么了？"
+                print(f"[onebot] group reply (mention, no text): {reply}", flush=True)
+                self.send_to(reply, group=True, conv_id=group_id, at_qq=user_id)
+                self._last_group_reply[group_id] = time.time()
                 return
 
             if not mentioned and not whitelisted:
