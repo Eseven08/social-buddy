@@ -43,6 +43,31 @@ class ConversationManager:
         self.brain = brain or RetrievalBrain(self.memory)
         self.proactivity = proactivity or ProactiveEngine(self.memory)
         self.last_msg_ts: float = time.time()
+        self._fallback_brain: RetrievalBrain | None = None
+        self._last_brain_fail: float = 0.0
+
+    # ------------------------------------------------------------------
+    def _generate(self, messages: list[dict], temperature: float) -> str:
+        """Generate, degrading gracefully if the LLM backend fails.
+
+        If the configured brain errors (rate limit, network, ...), fall back
+        to the offline retrieval brain so the buddy keeps talking instead of
+        crashing -- and log the reason once.
+        """
+        try:
+            return self.brain.generate(messages, temperature=temperature)
+        except Exception as exc:  # noqa: BLE001
+            now = time.time()
+            if now - self._last_brain_fail > 30:
+                print(
+                    f"[warn] brain '{self.brain.name}' failed ({exc}); "
+                    "falling back to offline retrieval replies for a bit",
+                    flush=True,
+                )
+                self._last_brain_fail = now
+            if self._fallback_brain is None:
+                self._fallback_brain = RetrievalBrain(self.memory)
+            return self._fallback_brain.generate(messages, temperature=temperature)
 
     # ------------------------------------------------------------------
     # Incoming message
@@ -65,7 +90,7 @@ class ConversationManager:
         self.memory.register_open_topic(text, now)
 
         messages = self._messages(now)
-        reply = self.brain.generate(messages, temperature=0.85)
+        reply = self._generate(messages, temperature=0.85)
         reply = self._clean(reply)
         if reply:
             self.memory.add_turn("buddy", reply)
@@ -88,7 +113,7 @@ class ConversationManager:
             return None
 
         messages = self._messages(now, proactive=action)
-        text = self.brain.generate(messages, temperature=0.9)
+        text = self._generate(messages, temperature=0.9)
         text = self._clean(text)
         if not text:
             return None

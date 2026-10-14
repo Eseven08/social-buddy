@@ -197,8 +197,15 @@ class RetrievalBrain(Brain):
 def get_brain(memory: MemoryBank | None = None) -> Brain:
     """Build the backend selected by environment variables.
 
-    Order: SOCIAL_BUDDY_MODEL != "retrieval" and a key/host present
-    -> OpenAI-compatible / Ollama; otherwise the retrieval fallback.
+    Selection rules (in order):
+
+    1. SOCIAL_BUDDY_BRAIN is set explicitly -> obey it.
+    2. OLLAMA_HOST is set              -> local Ollama.
+    3. OPENAI_API_KEY AND OPENAI_BASE_URL are both set -> OpenAI-compatible.
+       (An ambient OPENAI_API_KEY alone is NOT enough: without an explicit
+       base URL the default api.openai.com is often unreachable/rate-limited
+       from many networks, so we refuse to silently pick it.)
+    4. otherwise -> retrieval fallback (offline, no keys).
     """
     memory = memory or MemoryBank()
     mode = os.getenv("SOCIAL_BUDDY_BRAIN", "").strip().lower()
@@ -215,15 +222,15 @@ def get_brain(memory: MemoryBank | None = None) -> Brain:
             host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
             model=os.getenv("SOCIAL_BUDDY_MODEL", "qwen2.5:3b"),
         )
-    if os.getenv("OPENAI_API_KEY"):
+    if os.getenv("OLLAMA_HOST"):
+        return OllamaBrain(
+            host=os.getenv("OLLAMA_HOST"),
+            model=os.getenv("SOCIAL_BUDDY_MODEL", "qwen2.5:3b"),
+        )
+    if os.getenv("OPENAI_API_KEY") and os.getenv("OPENAI_BASE_URL"):
         return OpenAIBrain(
             api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            base_url=os.getenv("OPENAI_BASE_URL"),
             model=os.getenv("SOCIAL_BUDDY_MODEL", "gpt-4o-mini"),
-        )
-    if os.getenv("OLLAMA_HOST") or mode == "auto-ollama":
-        return OllamaBrain(
-            host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-            model=os.getenv("SOCIAL_BUDDY_MODEL", "qwen2.5:3b"),
         )
     return RetrievalBrain(memory)

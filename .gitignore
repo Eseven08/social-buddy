@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
 config.env
+profile.json
 buddy_memory.json
+buddy_memory_*.json
 .env
