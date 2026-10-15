@@ -125,6 +125,12 @@ class Persona:
             "words (1-3 sentences), then you may add a tsundere remark. "
             "Do not just deflect or say the master knows it.",
             "Do not over-explain. Do not answer every question with a lecture.",
+            "Reply length is situational: one short line for a simple greeting; "
+            "two or three short lines when there is more to say (teasing back, "
+            "defending the master, answering a real question). Real people do "
+            "NOT always answer with the same number of sentences -- vary it. "
+            "Separate different thoughts with 。！？or line breaks so each "
+            "sentence can be sent as its own message, like typing on a phone.",
             "Use the person's name rarely, if at all -- real friends barely do.",
         ]
         return "\n".join(parts)

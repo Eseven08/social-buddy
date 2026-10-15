@@ -211,6 +211,29 @@ class OllamaBrain(Brain):
         "那是当然的啦",
         "这不是在学习吗",
     )
+    _REPEAT_STOP = frozenset(
+        "哼 啊 吗 呢 吧 啦 哦 呀 哟 你 我 他 她 它 的 了 是 不 有 在 主人 小樱 山田樱".split()
+    )
+
+    @staticmethod
+    def _jaccard(a: str, b: str) -> float:
+        wa = set(re.findall(r"[\u4e00-\u9fa5]{2,}", a))
+        wb = set(re.findall(r"[\u4e00-\u9fa5]{2,}", b))
+        if not wa or not wb:
+            return 0.0
+        return len(wa & wb) / len(wa | wb)
+
+    def _repetition_issue(self, text: str):
+        prev = self._last_output or ""
+        if prev and self._jaccard(text, prev) >= 0.5:
+            return "overlaps the previous reply"
+        words = [w for w in re.findall(r"[\u4e00-\u9fa5]{2,}", text)
+                 if w not in self._REPEAT_STOP]
+        if words:
+            top = Counter(words).most_common(1)[0]
+            if top[1] >= 3:
+                return f"repeats the word 「{top[0]}」 {top[1]} times"
+        return None
 
     def _finalize(self, messages, text: str, temperature=0.8, max_tokens=160) -> str:
         """Clean the raw reply; regenerate if it repeats a catchphrase."""
@@ -230,17 +253,22 @@ class OllamaBrain(Brain):
             resp.raise_for_status()
             text = resp.json()["message"]["content"].strip()
 
-        # Anti-stiff: the small model overuses few-shot catchphrases and
-        # answers every topic with the same scripted line. Regenerate up to
-        # twice with a "say something natural" nudge.
-        for _ in range(2):
-            if not text or not any(b in text for b in self._BANNED_CATCHPHRASES):
+        # Anti-stiff / anti-repeat: the small model overuses few-shot
+        # catchphrases, echoes its previous reply, or repeats one word. Each
+        # issue triggers a regeneration with a "be fresh" nudge (max 3 tries).
+        for _ in range(3):
+            issue = None
+            if text and any(b in text for b in self._BANNED_CATCHPHRASES):
+                issue = "catchphrase"
+            elif text and self._repetition_issue(text):
+                issue = self._repetition_issue(text)
+            if not issue:
                 break
             nudge = (
-                "That last answer sounded like a scripted catchphrase. Reply "
-                "again in the same persona, but say something natural and "
-                "fresh that fits THIS exact conversation. Do NOT use the "
-                "「才不是」/「那是当然的啦」/「这不是在学习吗」 catchphrases."
+                "That last answer was too repetitive (%s). Reply again in the "
+                "same persona, but with completely different, natural wording "
+                "that fits THIS exact conversation. Avoid repeating words you "
+                "just used." % issue
             )
             msgs2 = [dict(m) for m in messages]
             msgs2.append({"role": "system", "content": nudge})
