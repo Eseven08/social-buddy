@@ -247,7 +247,10 @@ class OneBotAdapter(Adapter):
             text = _plain_text(event.get("message"))
             mentioned = _was_mentioned(event.get("message"), self.bot_qq)
             whitelisted = user_id in self.whitelist
-            if not text and not mentioned and not whitelisted:
+            # Called by name (小樱 / 山田樱) -> must reply too.
+            name_called = ("小樱" in text) or ("山田樱" in text)
+            must_reply = mentioned or whitelisted or name_called
+            if not text and not must_reply:
                 return
             if not text:
                 # Bare @ with no text -- answer anyway so the bot never feels dead.
@@ -257,7 +260,7 @@ class OneBotAdapter(Adapter):
                 self._last_group_reply[group_id] = time.time()
                 return
 
-            if not mentioned and not whitelisted:
+            if not must_reply:
                 # Join the group chat occasionally, but never spam.
                 if not self._group_cooldown_ok(group_id):
                     return
@@ -268,8 +271,8 @@ class OneBotAdapter(Adapter):
             reply = cm.handle_incoming(text, sender=user_id)
             if not reply:
                 return
-            at_qq = user_id if (mentioned or whitelisted) else ""
-            print(f"[onebot] group reply (mention={mentioned}): {reply}", flush=True)
+            at_qq = user_id if must_reply else ""
+            print(f"[onebot] group reply (mention={mentioned} whitelist={whitelisted} name={name_called}): {reply}", flush=True)
             self.send_to(reply, group=True, conv_id=group_id, at_qq=at_qq)
             self._last_group_reply[group_id] = time.time()
             return

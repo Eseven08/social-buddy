@@ -202,6 +202,18 @@ class OllamaBrain(Brain):
         )
         resp.raise_for_status()
         text = resp.json()["message"]["content"].strip()
+        return self._finalize(messages, text)
+
+    _BANNED_CATCHPHRASES = (
+        "才不是特意做给你看的",
+        "特意做给你看",
+        "那是当然的啦！才",
+        "那是当然的啦",
+        "这不是在学习吗",
+    )
+
+    def _finalize(self, messages, text: str, temperature=0.8, max_tokens=160) -> str:
+        """Clean the raw reply; regenerate if it repeats a catchphrase."""
         # Anti-repeat: the 3b model sometimes echoes the previous reply or a
         # few-shot example verbatim. Detect and regenerate once.
         if text and text == self._last_output:
@@ -217,6 +229,35 @@ class OllamaBrain(Brain):
             )
             resp.raise_for_status()
             text = resp.json()["message"]["content"].strip()
+
+        # Anti-stiff: the small model overuses few-shot catchphrases and
+        # answers every topic with the same scripted line. Regenerate up to
+        # twice with a "say something natural" nudge.
+        for _ in range(2):
+            if not text or not any(b in text for b in self._BANNED_CATCHPHRASES):
+                break
+            nudge = (
+                "That last answer sounded like a scripted catchphrase. Reply "
+                "again in the same persona, but say something natural and "
+                "fresh that fits THIS exact conversation. Do NOT use the "
+                "「才不是」/「那是当然的啦」/「这不是在学习吗」 catchphrases."
+            )
+            msgs2 = [dict(m) for m in messages]
+            msgs2.append({"role": "system", "content": nudge})
+            resp = requests.post(
+                f"{self.host}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": msgs2,
+                    "stream": False,
+                    "options": {"temperature": min(temperature + 0.15, 1.0),
+                                "num_predict": max_tokens},
+                },
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            text = resp.json()["message"]["content"].strip()
+
         self._last_output = text
         # Strip speaker tags / bracket labels the small model may echo back
         # (e.g. "[QQ 123]" or "[贴吧]" at the start), any //@ forward mark,
