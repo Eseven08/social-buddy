@@ -276,11 +276,11 @@ class MemoryBank:
         key = key.strip().lower()
         if key and value.strip() and self.facts.get(key) != value.strip():
             self.facts[key] = value.strip()
-            note = f"fact: {key} = {value.strip()}"
-            if note not in self.notes:
-                self.notes.append(note)
-                self._index.add(note)
-                self._note_ts[note] = time.time()
+            # Facts live in self.facts only. Do NOT write anything into notes:
+            # the proactive engine turns notes into conversation topics and
+            # the small model ends up quoting its own memory format in chat.
+            # (This is the leak that produced "fact: master_age = 18" and
+            # "[internal memory updated]" in group messages.)
 
     def add_milestone(self, title: str, at: float) -> None:
         if not any(m["title"] == title for m in self.milestones):

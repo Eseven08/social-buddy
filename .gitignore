@@ -5,3 +5,4 @@ profile.json
 buddy_memory.json
 buddy_memory_*.json
 .env
+jm_downloads/
