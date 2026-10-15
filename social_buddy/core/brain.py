@@ -177,7 +177,7 @@ class OllamaBrain(Brain):
             "回复不要带任何标签、冒号或转发格式，直接开口说话。"
         )
 
-    def generate(self, messages, temperature=0.8, max_tokens=160):
+    def generate(self, messages, temperature=0.92, max_tokens=160):
         messages = [dict(m) for m in messages]
         escalation = self._escalation(messages) or self._knowledge_boost(messages)
         if escalation:

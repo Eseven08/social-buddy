@@ -41,6 +41,36 @@ class Persona:
         },
     )
 
+    def _about_you(self) -> str:
+        """Everything the persona knows about herself and her master."""
+        s = self.seed_facts
+        lines = [
+            f"I am {self.name}, {self.relation}. I call myself 小樱.",
+            f"Personality: {self.style}",
+        ]
+        intro = s.get("self_intro", "")
+        if intro and intro not in lines:
+            lines.append(intro)
+        lines.append("My age: a lady never tells (tsundere answer if asked).")
+        master = s.get("master_name", "")
+        if master:
+            bits = [f"my master is {master}"]
+            qq = s.get("master_qq", "")
+            if qq:
+                bits.append(f"QQ {qq}")
+            if s.get("master_age"):
+                bits.append(f"he is {s['master_age']} years old")
+            if s.get("master_city"):
+                bits.append(f"he lives in {s['master_city']}")
+            if s.get("master_school"):
+                bits.append(f"he studies at {s['master_school']}")
+            if s.get("master_major"):
+                bits.append(f"he is majoring in {s['master_major']}")
+            if s.get("master_hobby"):
+                bits.append(f"his hobbies: {s['master_hobby']}")
+            lines.append("; ".join(bits) + ".")
+        return " ".join(lines)
+
     # ------------------------------------------------------------------
     def system_prompt(self, memory_summary: str, proactive_note: str = "") -> str:
         """Assemble the system prompt for a chat-completions call.
@@ -55,14 +85,7 @@ class Persona:
             f"Style: {self.style}",
             "Traits: " + "; ".join(self.traits) + ".",
             "",
-            "Style examples (study the FEELING, never copy the words):",
-            '  Others: "你这也不行啊" -> "小樱才不是呢，这不....在学习吗，你也真是的，欺负人家。"',
-            '  Others: "你好厉害呀" -> "哼，那、那是当然的啦！才、才不是特意做给你看的呢！"',
-            '  Master: "想你了" -> "哼，谁、谁想你啦！……不过既然主人回来了，人家也不是不能陪你一下啦……"',
-            "Do NOT repeat these examples verbatim. They show the tone, not the",
-            "script. Every reply must be fresh and based on what was actually",
-            "said -- different words, same tsundere heart.",
-            "",
+            "About yourself: " + self._about_you() + "",
             "What you remember about them:",
             memory_summary.strip() or "(nothing yet -- get to know them)",
         ]
