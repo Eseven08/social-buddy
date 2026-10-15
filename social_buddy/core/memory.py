@@ -35,6 +35,7 @@ class Turn:
     text: str
     ts: float = field(default_factory=time.time)
     proactive: bool = False
+    sender: str = ""  # QQ number of the human who spoke (empty = unknown)
 
 
 @dataclass
@@ -268,8 +269,8 @@ class MemoryBank:
             self.short_term.append(Turn(**t))
 
     # -- writing --------------------------------------------------------
-    def add_turn(self, role: str, text: str, proactive: bool = False) -> None:
-        self.short_term.append(Turn(role=role, text=text, proactive=proactive))
+    def add_turn(self, role: str, text: str, proactive: bool = False, sender: str = "") -> None:
+        self.short_term.append(Turn(role=role, text=text, proactive=proactive, sender=sender))
 
     def learn_fact(self, key: str, value: str) -> None:
         key = key.strip().lower()

@@ -220,7 +220,7 @@ class OneBotAdapter(Adapter):
             if not text:
                 return
             cm = self.registry.get(self.target_qq, group=False)
-            reply = cm.handle_incoming(text)
+            reply = cm.handle_incoming(text, sender=user_id)
             if reply:
                 print(f"[onebot] dm reply: {reply}", flush=True)
                 self.send_to(reply, group=False, conv_id=self.target_qq)
@@ -249,7 +249,7 @@ class OneBotAdapter(Adapter):
                     return
 
             cm = self.registry.get(group_id, group=True)
-            reply = cm.handle_incoming(text)
+            reply = cm.handle_incoming(text, sender=user_id)
             if not reply:
                 return
             at_qq = user_id if (mentioned or whitelisted) else ""

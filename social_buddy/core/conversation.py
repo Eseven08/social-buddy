@@ -72,14 +72,14 @@ class ConversationManager:
     # ------------------------------------------------------------------
     # Incoming message
     # ------------------------------------------------------------------
-    def handle_incoming(self, text: str, now: float | None = None) -> str:
+    def handle_incoming(self, text: str, now: float | None = None, sender: str = "") -> str:
         now = now if now is not None else time.time()
         text = (text or "").strip()
         if not text:
             return ""
 
         self.last_msg_ts = now
-        self.memory.add_turn("human", text)
+        self.memory.add_turn("human", text, sender=sender)
 
         # Learn from what they said.
         for key, value in extract_facts(text):
@@ -133,7 +133,10 @@ class ConversationManager:
 
         for t in self.memory.recent_turns(10):
             role = "user" if t.role == "human" else "assistant"
-            msgs.append({"role": role, "content": t.text})
+            content = t.text
+            if role == "user" and t.sender:
+                content = f"[from QQ {t.sender}] {content}"
+            msgs.append({"role": role, "content": content})
 
         if proactive is not None:
             # The reason was already injected into the system prompt; the
