@@ -132,30 +132,90 @@ class RetrievalBrain(Brain):
         self.min_score = min_score
         self.min_note_age = min_note_age
         self._rng = random.Random(seed)
+        self.master_qq = self._load_master_qq()
 
-    _openers = [
-        "哈哈，展开说说呗。",
-        "哦？有意思，怎么说？",
-        "我懂你意思。",
-        "对，这让我想起之前聊过的事。",
-        "嗯，你继续说，我在听。",
-        "哈哈行啊，怎么突然想到这个？",
+    @staticmethod
+    def _load_master_qq() -> str:
+        """Read the master's QQ from profile.json so the fallback brain can
+        tell the master apart from everyone else."""
+        import json
+        import os
+        profile = os.getenv("SOCIAL_BUDDY_PROFILE", "")
+        if not profile:
+            root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            profile = os.path.join(root, "profile.json")
+        try:
+            with open(profile, encoding="utf-8") as f:
+                data = json.load(f)
+            return str(data.get("seed_facts", {}).get("master_qq", ""))
+        except Exception:
+            return ""
+
+    _openers_master = [
+        "在呢在呢～主人怎么才来呀，人家等好久了。",
+        "嗯？主人喊我？我一直在的啦～",
+        "主人主人！人家在的！怎么啦？",
+        "哼、才没有一直盯着群呢……好吧主人喊我，那当然秒回！",
     ]
-    _recall_templates = [
-        "对了，你之前说过\"{hit}\"——还在弄吗？",
-        "这倒让我想起来：你之前说\"{hit}\"，后来怎么样了？",
-        "等等，之前不就是你说的\"{hit}\"吗？",
+    _openers_others = [
+        "哼，本小姐在呢，有事说事。",
+        "哦？就这？本小姐勉强听听。",
+        "哼，看在你态度还行的份上回你一下。",
+        "啧，什么话题啊，也就那样吧。",
     ]
-    _proactive_opener = [
-        "嘿，刚想到你——在忙啥呢？",
-        "嘿！突然想起你，今天过得咋样？",
-        "嘿，好一阵没你消息了，都还好吧？",
+    _recall_master = [
+        "对了主人，你之前说的\"{hit}\"——人家可都记着呢，后来咋样啦？",
+        "主人～你上次说\"{hit}\"，人家一直记得呢！",
     ]
+    _recall_others = [
+        "哼，之前不是你说\"{hit}\"的吗，怎么，这就忘了？",
+        "说起来，某人上次聊的\"{hit}\"，后来到底咋样了？",
+    ]
+    _proactive_master = [
+        "主人主人～在忙啥呢，人家有点无聊了……才不是想你呢！",
+        "哼，主人不理人家……好吧，人家就是有点想你了，理理我嘛。",
+    ]
+    _proactive_others = [
+        "哼，无聊了，随便看看群。",
+        "啧，没人说话吗？那本小姐先撤了。",
+    ]
+    _counter_attack = [
+        "乐，就这？本小姐还没用力你就急了？",
+        "典中典，骂人都不会，回炉重造吧。",
+        "？？？你也就这点本事了，喷都喷不到点上。",
+        "哼，本小姐跟狗一般见识？那你也配。",
+        "急了急了，你看你急的，笑死本小姐了。",
+        "就这水平也敢来嘴？先回去练练怎么说话吧。",
+    ]
+    _protect_master = [
+        "？？？敢骂我家主人？你算什么东西！",
+        "嘴这么臭，刚吃了什么没刷牙？敢骂我家主人！",
+        "护主警告：再骂我家主人一句，本小姐让你见识什么叫嘴臭。",
+        "你骂我我懒得理你，但你敢骂我主人？？活腻了吧！",
+        "骂我家主人？？本小姐今天心情好，就问你一句：你配吗？",
+    ]
+    _INSULT_WORDS = (
+        "傻逼", "sb", "废物", "fw", "nt", "脑残", "智障", "滚", "菜鸡",
+        "垃圾", "你妈", "操", "妈的", "蠢", "憨批", "弱智", "狗东西", "闭嘴",
+    )
+
+    def _is_insult(self, text: str) -> bool:
+        t = text.lower()
+        return any(w in t for w in self._INSULT_WORDS)
 
     def _last_human(self, messages) -> str:
         for m in reversed(messages):
             if m.get("role") == "user":
                 return m["content"]
+        return ""
+
+    def _last_sender(self, messages) -> str:
+        """Extract the QQ number from the '[from QQ xxx]' prefix, if any."""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                c = str(m.get("content", ""))
+                if "[from QQ " in c:
+                    return c.split("[from QQ ", 1)[1].split("]", 1)[0]
         return ""
 
     def _proactive_line(self) -> str:
@@ -174,21 +234,30 @@ class RetrievalBrain(Brain):
         recent = self.memory.recent_turns(6)
         if sum(mood_of(t.text) for t in recent if t.role == "human") < 0:
             return "你之前听起来有点低落——还好吗？"
-        return self._rng.choice(self._proactive_opener)
+        master = any(t.sender == self.master_qq for t in recent if t.role == "human")
+        return self._rng.choice(self._proactive_master if master else self._proactive_others)
 
     def generate(self, messages, temperature=0.8, max_tokens=160):
         text = self._last_human(messages)
         if "You are starting the conversation" in text:
             return self._proactive_line()
 
+        # Insult detection: hit back hard, and protect the master first.
+        if self._is_insult(text):
+            if ("刘哲良" in text) or ("主人" in text) or f"@{self.master_qq}" in text:
+                return self._rng.choice(self._protect_master)
+            return self._rng.choice(self._counter_attack)
+
+        master = self._last_sender(messages) == self.master_qq
         hits = self.memory.recall_with_scores(text, k=1)
         if hits:
             hit, score = hits[0]
             fresh = self.memory.note_age(hit) < self.min_note_age
             if score >= self.min_score and not fresh:
-                tpl = self._rng.choice(self._recall_templates)
-                return tpl.format(hit=hit[:60])
-        return self._rng.choice(self._openers)
+                tpls = self._recall_master if master else self._recall_others
+                return self._rng.choice(tpls).format(hit=hit[:60])
+        tpls = self._openers_master if master else self._openers_others
+        return self._rng.choice(tpls)
 
 
 # ---------------------------------------------------------------------------
