@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 
 import requests
 
@@ -83,6 +84,12 @@ class OpenAIBrain(Brain):
 class OllamaBrain(Brain):
     name = "ollama"
 
+    _INSULT_WORDS = (
+        "傻逼", "sb", "废物", "fw", "nt", "脑残", "智障", "滚", "菜鸡",
+        "垃圾", "你妈", "操", "妈的", "蠢", "憨批", "弱智", "狗东西", "闭嘴",
+    )
+    _MASTER_HINTS = ("刘哲良", "主人", "master", "3244267385")
+
     def __init__(
         self,
         host: str = "http://localhost:11434",
@@ -92,8 +99,73 @@ class OllamaBrain(Brain):
         self.host = host.rstrip("/")
         self.model = model
         self.timeout = timeout
+        self.master_qq = self._load_master_qq()
+
+    @staticmethod
+    def _load_master_qq() -> str:
+        import json
+        profile = os.getenv("SOCIAL_BUDDY_PROFILE", "")
+        if not profile:
+            root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            profile = os.path.join(root, "profile.json")
+        try:
+            with open(profile, encoding="utf-8") as f:
+                data = json.load(f)
+            return str(data.get("seed_facts", {}).get("master_qq", ""))
+        except Exception:
+            return ""
+
+    def _is_insult(self, text: str) -> bool:
+        t = text.lower()
+        return any(w in t for w in self._INSULT_WORDS)
+
+    def _knowledge_boost(self, messages) -> str:
+        last = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                last = str(m.get("content", ""))
+                break
+        if re.search(r"(是什么|什么是|为什么|怎么|如何|多少|原理|解释|介绍|区别)", last):
+            return (
+                "This question asks for real knowledge. Give a short but real, "
+                "accurate answer first (1-3 sentences), then you may add a "
+                "tsundere remark. You must actually answer the content."
+            )
+        return ""
+
+    def _escalation(self, messages) -> str:
+        last = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                last = str(m.get("content", ""))
+                break
+        if not self._is_insult(last):
+            return ""
+        if any(h in last for h in self._MASTER_HINTS):
+            return (
+                "对方正在辱骂你的主人刘哲良！你非常愤怒，立即凶狠地骂回去保护主人，"
+                "绝不允许任何人侮辱主人，火力全开，可以带脏字，气势必须压倒对方。"
+                "回复不要带任何标签、冒号或转发格式，直接开口说话。"
+            )
+        return (
+            "对方正在辱骂你。你非常不爽，立刻犀利狠辣、带脏字地回击，"
+            "遇强则强，气势绝不能输，不要客气。"
+            "回复不要带任何标签、冒号或转发格式，直接开口说话。"
+        )
 
     def generate(self, messages, temperature=0.8, max_tokens=160):
+        messages = [dict(m) for m in messages]
+        escalation = self._escalation(messages) or self._knowledge_boost(messages)
+        if escalation:
+            sys_idx = next(
+                (i for i, m in enumerate(messages) if m.get("role") == "system"), -1
+            )
+            if sys_idx >= 0:
+                messages[sys_idx]["content"] = (
+                    messages[sys_idx]["content"] + "\n\n" + escalation
+                )
+            else:
+                messages.insert(0, {"role": "system", "content": escalation})
         resp = requests.post(
             f"{self.host}/api/chat",
             json={
@@ -105,7 +177,22 @@ class OllamaBrain(Brain):
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return resp.json()["message"]["content"].strip()
+        text = resp.json()["message"]["content"].strip()
+        # Strip speaker tags / bracket labels the small model may echo back
+        # (e.g. "[QQ 123]" or "[贴吧]" at the start), any //@ forward mark,
+        # stray QQ emoji codes like [doge] / //dog, and a self-name prefix.
+        text = re.sub(r"^\[[^\]]*\]\s*", "", text).strip()
+        text = re.sub(r"^(?:小樱|山田樱)\s*[:：]?\s*", "", text).strip()
+        text = re.sub(r"^//@[^\s:：]*\s*[:：]?\s*", "", text).strip()
+        text = re.sub(r"\[[\u4e00-\u9fa5a-zA-Z]+\]", "", text).strip()
+        text = re.sub(r"//[a-zA-Z]+\b", "", text).strip()
+        text = re.sub(r"@\[[^\]]*\]", "", text).strip()
+        # A sprinkle of tsundere kaomoji, like a real girl would type.
+        if text and random.random() < 0.45:
+            text = text + random.choice(
+                ("～", "！", "哼！", "～♪", "(≧▽≦)", "(*^▽^*)", "(￣^￣)", "~(˘▾˘~)")
+            )
+        return text
 
 
 # ---------------------------------------------------------------------------

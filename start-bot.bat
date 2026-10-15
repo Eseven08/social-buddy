@@ -9,7 +9,7 @@ REM  and double-click this file.
 REM ============================================================
 
 set NAPCAT_DIR=G:\NapCatOneKey\NapCat.52230.Shell
-set BOT_DIR=G:\social-buddy
+set BOT_DIR=G:\山田樱\social-buddy
 
 if not exist "%NAPCAT_DIR%\NapCatWinBootMain.exe" (
     echo [ERROR] NapCat not found at: %NAPCAT_DIR%

@@ -70,7 +70,7 @@ class OneBotAdapter(Adapter):
         self.poll_seconds = int(os.getenv("SOCIAL_BUDDY_POLL_SECONDS", "4"))
         self._rng = random.Random()
         self._last_group_reply: dict[str, float] = {}  # group -> ts
-        self._group_cooldown = 45.0
+        self._group_cooldown = 60.0
         self._last_seqs: dict[str, int | None] = {}  # group -> last seen message time
         self._seen_ids: dict[str, set[int]] = {}  # group -> recently seen message ids
         if not self.target_qq and not self.group_id:
@@ -81,7 +81,23 @@ class OneBotAdapter(Adapter):
     # ------------------------------------------------------------------
     # outbound
     # ------------------------------------------------------------------
+    _RISK_WORDS = (
+        "六四", "天安门事件", "法轮", "翻墙", "代刷", "刷单", "兼职日结",
+        "裸聊", "约炮", "卖号", "租号", "发卡", "博彩", "菠菜", "赌博",
+        "跑分", "洗钱", "毒品", "冰毒", "摇头丸", "枪支", "买凶",
+    )
+
+    @staticmethod
+    def _risk_hit(text: str) -> bool:
+        t = text.lower()
+        return any(w in t for w in OneBotAdapter._RISK_WORDS)
+
     def send_to(self, text: str, group: bool = False, conv_id: str = "", at_qq: str = "") -> None:
+        if self._risk_hit(text):
+            print("[onebot] blocked risky reply", flush=True)
+            return
+        # Human-like typing delay: never reply instantly, never at a fixed rate.
+        time.sleep(self._rng.uniform(1.5, 4.0))
         if group:
             endpoint, payload = "send_group_msg", {"group_id": int(conv_id or self.group_id)}
         else:
