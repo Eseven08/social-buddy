@@ -131,11 +131,13 @@ class ConversationManager:
         system = self.persona.system_prompt(summary, proactive_note=note)
         msgs = [{"role": "system", "content": system}]
 
+        master_qq = self.persona.seed_facts.get("master_qq", "")
         for t in self.memory.recent_turns(10):
             role = "user" if t.role == "human" else "assistant"
             content = t.text
             if role == "user" and t.sender:
-                content = f"[from QQ {t.sender}] {content}"
+                tag = "MASTER" if t.sender == master_qq else "STRANGER"
+                content = f"[{tag}] {content}"
             msgs.append({"role": role, "content": content})
 
         if proactive is not None:

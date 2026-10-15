@@ -100,6 +100,7 @@ class OllamaBrain(Brain):
         self.model = model
         self.timeout = timeout
         self.master_qq = self._load_master_qq()
+        self._last_output = ""
 
     @staticmethod
     def _load_master_qq() -> str:
@@ -118,6 +119,29 @@ class OllamaBrain(Brain):
     def _is_insult(self, text: str) -> bool:
         t = text.lower()
         return any(w in t for w in self._INSULT_WORDS)
+
+    @staticmethod
+    def _last_user_tag(messages) -> str:
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                return str(m.get("content", ""))
+        return ""
+
+    def _fix_master_ref(self, messages, text: str) -> str:
+        """Only the real master may be called 主人.
+
+        If the last speaker is NOT the master (tagged STRANGER), rewrite any
+        bare 主人 to 你 -- but keep protective phrases like 我主人 / 我家主人 /
+        骂主人 / 护主人, which refer to her master as a third party.
+        """
+        last = self._last_user_tag(messages)
+        # Never reveal the master's full name -- 哲良大人 for everyone else.
+        text = text.replace("刘哲良", "哲良大人")
+        if "[MASTER]" in last:
+            return text
+        # 主人 preceded by 我/家/骂/咱/护 stays; otherwise -> 你.
+        text = re.sub(r"(?<![我家骂咱护])主人(?!大人)", "你", text)
+        return text
 
     def _knowledge_boost(self, messages) -> str:
         last = ""
@@ -178,6 +202,22 @@ class OllamaBrain(Brain):
         )
         resp.raise_for_status()
         text = resp.json()["message"]["content"].strip()
+        # Anti-repeat: the 3b model sometimes echoes the previous reply or a
+        # few-shot example verbatim. Detect and regenerate once.
+        if text and text == self._last_output:
+            resp = requests.post(
+                f"{self.host}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {"temperature": temperature + 0.1, "num_predict": max_tokens},
+                },
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            text = resp.json()["message"]["content"].strip()
+        self._last_output = text
         # Strip speaker tags / bracket labels the small model may echo back
         # (e.g. "[QQ 123]" or "[贴吧]" at the start), any //@ forward mark,
         # stray QQ emoji codes like [doge] / //dog, and a self-name prefix.
@@ -187,6 +227,8 @@ class OllamaBrain(Brain):
         text = re.sub(r"\[[\u4e00-\u9fa5a-zA-Z]+\]", "", text).strip()
         text = re.sub(r"//[a-zA-Z]+\b", "", text).strip()
         text = re.sub(r"@\[[^\]]*\]", "", text).strip()
+        # Only the master may be called 主人 -- enforce it at the code level.
+        text = self._fix_master_ref(messages, text)
         # A sprinkle of tsundere kaomoji, like a real girl would type.
         if text and random.random() < 0.45:
             text = text + random.choice(
